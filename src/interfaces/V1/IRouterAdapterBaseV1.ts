@@ -35,9 +35,14 @@ export type TradeOperationType =
 
 export type ClaimType = 'Funding'
 
-export type MarketMode = 'ISOLATED' | 'CROSS'
+export type MarketMode = 'ISOLATED' | 'CROSS'  //cross margin only
 
-export type TimeInForce = 'GTC' | 'IOC' | 'ALO'
+/*
+GTC - Good till cancelled (regular order)
+IOC - instant or close (supported type)
+ALO - post only type
+*/
+export type TimeInForce = 'GTC' | 'IOC' | 'ALO'  
 
 export type Protocol = {
   protocolId: ProtocolId
@@ -51,7 +56,7 @@ export type AvailableToTradeParams<T extends ProtocolId> = T extends 'GMXV1' | '
   ? {
       market: Market['marketId']
       direction: TradeDirection
-      mode: MarketMode
+      mode: MarketMode  //cross only
       sizeDelta: AmountInfo
       marginDelta: AmountInfo
     }
@@ -90,11 +95,11 @@ export type Market = {
 }
 
 export type GenericStaticMarketMetadata = {
-  maxLeverage: FixedNumber
-  minLeverage: FixedNumber
-  minInitialMargin: FixedNumber
-  minPositionSize: FixedNumber
-  maxPrecision: number // used for OrderBook exchanges, for non orderbook exchanges, this is defaulted to 1
+  maxLeverage: FixedNumber  //depends on market can query in v1/public/info/{symbol}
+  minLeverage: FixedNumber //min leverage 1
+  minInitialMargin: FixedNumber //no min
+  minPositionSize: FixedNumber // v1/public/info/{symbol} - min position size = min notional
+  maxPrecision: number // used for OrderBook exchanges, for non orderbook exchanges, this is defaulted to 1, retrieved from v1/public/info/{symbol} = base_tick
 }
 
 export type SynV2StaticMarketMetadata = GenericStaticMarketMetadata & {
@@ -113,12 +118,14 @@ export type StaticMarketMetadata =
     }
 
 export type DynamicMarketMetadata = {
+  //we don't split long/short (total retrieved from WebSocket)
   oiLong: FixedNumber
   oiShort: FixedNumber
-  availableLiquidityLong: FixedNumber
-  availableLiquidityShort: FixedNumber
-  longFundingRate: FixedNumber
-  shortFundingRate: FixedNumber
+  availableLiquidityLong: FixedNumber //depth bids - request orderbook WS
+  availableLiquidityShort: FixedNumber //depth asks - request orderbook WS
+  longFundingRate: FixedNumber //WS
+  shortFundingRate: FixedNumber //WS
+  // long/short borrow rate same, v1/public/info/{symbol}
   longBorrowRate: FixedNumber
   shortBorrowRate: FixedNumber
 }
@@ -135,16 +142,17 @@ export type TriggerData = {
   triggerLimitPrice: FixedNumber | undefined
 }
 
+//WS {symbol}@trade
 export type TradeData = {
   marketId: Market['marketId']
   direction: TradeDirection
-  sizeDelta: AmountInfo
-  marginDelta: AmountInfo
+  sizeDelta: AmountInfo //clarify if qty or amount
+  marginDelta: AmountInfo //clarify
 }
 
 export type OrderData = TradeData & {
   triggerData: TriggerData | undefined
-  mode: 'ISOLATED' | 'CROSS'
+  mode: 'ISOLATED' | 'CROSS' //cross only
 }
 
 export type CollateralData = {
@@ -158,7 +166,7 @@ export type OrderIdentifier = {
 
 export type CreateOrder = OrderData &
   CollateralData & {
-    type: CreateOrderType
+    type: CreateOrderType //different endpoints for different order types. TP/SL use algo order endpoint
     tif?: TimeInForce
     slippage: number | undefined
   }
@@ -183,7 +191,7 @@ export type CancelOrder = OrderIdentifier & {
 }
 
 export type PnlData = {
-  aggregatePnl: FixedNumber
+  aggregatePnl: FixedNumber //unrealizedPnL = position_qty * (mark_price - avg_open)
   rawPnl: FixedNumber
   fundingFee: FixedNumber
   borrowFee: FixedNumber
@@ -193,17 +201,17 @@ export type PositionData = {
   marketId: Market['marketId']
   posId: string
   size: AmountInfo
-  margin: AmountInfo
-  accessibleMargin: AmountInfo
-  avgEntryPrice: FixedNumber
+  margin: AmountInfo //clarify if collateral or margin ratio
+  accessibleMargin: AmountInfo //clarify if free collateral
+  avgEntryPrice: FixedNumber //avg_open
   cumulativeFunding: FixedNumber
-  unrealizedPnl: PnlData
-  liquidationPrice: FixedNumber
-  leverage: FixedNumber
+  unrealizedPnl: PnlData //unrealizedPnL = position_qty * (mark_price - avg_open)
+  liquidationPrice: FixedNumber //liquidation_price  = max[( Mark Price + ( total_collateral_value - total_notional * MMR ) / ( |Qi| * MMRi - Qi )), 0]
+  leverage: FixedNumber //clarify if they display a leverage number, can't do it
   direction: TradeDirection
   collateral: Token
-  indexToken: Token
-  mode: MarketMode
+  indexToken: Token //clarify if index token
+  mode: MarketMode //cross margin only
 }
 
 export type PositionInfo = PositionData & {
@@ -213,18 +221,20 @@ export type PositionInfo = PositionData & {
   metadata: any
 }
 
+// v1/trades endpoint
 export type HistoricalTradeInfo = TradeData &
   CollateralData & {
     timestamp: number
-    indexPrice: FixedNumber
-    collateralPrice: FixedNumber
+    indexPrice: FixedNumber //can't provide for historical trades
+    collateralPrice: FixedNumber //USDC price, where to retrieve
     realizedPnl: FixedNumber
     keeperFeesPaid: FixedNumber
     positionFee: FixedNumber
-    operationType: TradeOperationType
-    txHash: string
+    operationType: TradeOperationType //clarify
+    txHash: string //trade id not hash
   }
 
+// v1/liquidations endpoint
 export type LiquidationInfo = CollateralData & {
   marketId: Market['marketId']
   liquidationPrice: FixedNumber
@@ -238,6 +248,7 @@ export type LiquidationInfo = CollateralData & {
   txHash: string | undefined // currently undefined for snx
 }
 
+// v1/funding_fee/history
 export type ClaimInfo = {
   marketId: Market['marketId']
   timestamp: number
@@ -285,7 +296,7 @@ export type CloseTradePreviewInfo = PreviewInfo & {
 
 export type IdleMarginInfo = CollateralData & {
   marketId: Market['marketId']
-  amount: FixedNumber // Always token terms
+  amount: FixedNumber // free collateral
 }
 
 export type PageOptions = {
@@ -377,6 +388,7 @@ export interface IRouterAdapterBaseV1 {
     opts?: ApiOpts
   ): Promise<ActionParam[]>
 
+  //margin can't be updated unless more assets deposited or position changes
   updatePositionMargin(
     positionInfo: PositionInfo[],
     updatePositionMarginData: UpdatePositionMarginData[],
@@ -384,10 +396,10 @@ export interface IRouterAdapterBaseV1 {
     opts?: ApiOpts
   ): Promise<ActionParam[]>
 
-  claimFunding(wallet: string, opts?: ApiOpts): Promise<ActionParam[]>
+  claimFunding(wallet: string, opts?: ApiOpts): Promise<ActionParam[]> //funding can't be claimed, can settle pnl
 
   ///// Fetching api's //////
-  getIdleMargins(wallet: string, opts?: ApiOpts): Promise<Array<IdleMarginInfo>>
+  getIdleMargins(wallet: string, opts?: ApiOpts): Promise<Array<IdleMarginInfo>> //free collateral
 
   getAllPositions(
     wallet: string,
@@ -416,6 +428,7 @@ export interface IRouterAdapterBaseV1 {
     opts?: ApiOpts
   ): Promise<PaginatedRes<LiquidationInfo>>
 
+  //no funding claimed, funding automatically added to cost position
   getClaimHistory(
     wallet: string,
     pageOptions: PageOptions | undefined,
@@ -436,6 +449,7 @@ export interface IRouterAdapterBaseV1 {
     opts?: ApiOpts
   ): Promise<CloseTradePreviewInfo[]>
 
+  //margin only changes when position changes or more collateral added (deposit)
   getUpdateMarginPreview(
     wallet: string,
     isDeposit: boolean[],
@@ -444,6 +458,7 @@ export interface IRouterAdapterBaseV1 {
     opts?: ApiOpts
   ): Promise<PreviewInfo[]>
 
+  //no claimalble funding
   getTotalClaimableFunding(wallet: string, opts?: ApiOpts): Promise<FixedNumber>
 
   getTotalAccuredFunding(wallet: string, opts?: ApiOpts): Promise<FixedNumber>
